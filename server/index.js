@@ -1,6 +1,8 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const jwt = require('jsonwebtoken')
 const {authMiddleware} = require('./middleware')
+const {todoModel,userModel} = require('./models')
 const app = express()
 app.use(express.json())
 
@@ -10,11 +12,13 @@ let TODOS = [];
 let TODO_USER_ID=1;
 let TODO_TODO_ID=1;
 
-app.post("/signup",(req,res)=>{
+app.post("/signup",async(req,res)=>{
     const userName = req.body.userName
     const password = req.body.password
 
-    const userExist = USERS.find(u=>u.userName===userName)
+    const userExist = await userModel.findOne({
+        userName:userName
+    })
 
     if(userExist){
         res.status(411).json({
@@ -22,22 +26,24 @@ app.post("/signup",(req,res)=>{
         })
         return;
     }
-    
-    USERS.push({
-        id: TODO_USER_ID++,
+    const newUser = await userModel.create({
         userName:userName,
         password:password
     })
     res.status(200).json({
-        message: "User created successfully"
+        message: "User created successfully",
+        id:newUser._id
     })
 })
 
-app.post('/signin',(req,res)=>{
+app.post('/signin', async(req,res)=>{
        const userName = req.body.userName;
        const password = req.body.password;
 
-       const userExist = USERS.find(u=>u.userName===userName && u.password===password)
+       const userExist = await userModel.findOne({
+        userName:userName,
+        password:password
+       })
 
        if(!userExist){
         res.status(411).json({
@@ -47,7 +53,7 @@ app.post('/signin',(req,res)=>{
        }
 
        const token = jwt.sign({
-        userId: userExist.id
+        userId: userExist._id.toString()
        },'secret1234567')
 
        res.status(200).json({
@@ -55,14 +61,13 @@ app.post('/signin',(req,res)=>{
        })
 })
 
-app.post('/todo',authMiddleware,(req,res)=>{
+app.post('/todo',authMiddleware, async(req,res)=>{
        const title = req.body.title;
        const description= req.body.description;
        const userId = req.userId
 
-       if(userId){
-       TODOS.push({
-        id: TODO_TODO_ID++,
+
+       const newTodo = await todoModel.create({
         title,
         description,
         userId
@@ -70,51 +75,64 @@ app.post('/todo',authMiddleware,(req,res)=>{
        res.status(200).json({
         message:"Todo has been created"
        })
-       }
 
 })
 
-app.get("/todos",authMiddleware,(req,res)=>{
-       const userId = req.userId
+app.get("/todos",authMiddleware, async (req,res)=>{
+    try {
+        const userId = req.userId;
 
-       const todos = TODOS.filter(u =>u.userId === userId)
+        const todos = await todoModel.find({ userId });
 
-       if(userId){
-       res.status(200).json({
-        todo:todos
-       })
-       }
-
-
-})
-
-app.delete("/delete_todo",(req,res)=>{
-    const todoId= parseInt(req.params.todoId)
-    const userId = req.userId
-
-    const doesUserownTodo = TODOS.find(t=> t.userId===userid && t.id === userId)
-
-    if(doesUserownTodo){
-        TODOS= TODOS.filter(t=> t.id === todoid)
         res.status(200).json({
-            message:"Todo deleted successfully"
+            todos
         })
-    }else{
-        res.status(411).json({
-            message:"Either todo does not exist or this is not your todo"
+    } catch (err) {
+        res.status(500).json({ message: "Error fetching todos" })
+    }
+})
+
+app.delete("/delete_todo/:todoId",authMiddleware,async(req,res)=>{
+
+    try{
+        const todoId= req.params.todoId
+        const userId = req.userId
+
+        const existTodo = await todoModel.findById({_id:todoId})
+        console.log(existTodo,"111111")
+        const existTodo2 = await todoModel.findById(todoId)
+        console.log(existTodo2,"333333333")
+        
+        if(!existTodo){
+           return res.status(411).json({
+                message:"Todo does not exist"
+            })
+        }
+
+        if(existTodo && existTodo.userId.toString() !== userId){
+            return res.status(411).json({
+                message:"This is not your Todo"
+            })
+        }
+
+        // ✅ Delete using deleteOne() or findByIdAndDelete()
+
+        await todoModel.deleteOne({_id:todoId})
+        return res.status(200).json({
+            message:"Todo deleted successfully."
+        })
+    }catch(err){
+        console.error(err)
+       return res.status(500).json({
+            message:"Error deleting Todo"
         })
     }
-
 })
 
-
-
-
-
-
-
-
-
-
-
+// Add this temporary route to clear DB
+app.get("/clear-db", async (req, res) => {
+    await userModel.deleteMany({});
+    await todoModel.deleteMany({});
+    res.json({ message: "Database cleared" })
+})
 app.listen(3000)

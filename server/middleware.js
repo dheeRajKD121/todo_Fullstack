@@ -6,7 +6,7 @@ function authMiddleware(req,res,next){
     const decode = jwt.verify(token,"secret1234567")
 
     if(decode.userId){
-        req.userId= parseInt(decode.userId)
+        req.userId= decode.userId
         next()
     }else{
         res.status(403).json({
